@@ -1,0 +1,39 @@
+Museum touchscreen exhibit:
+
+wxpython installation (from OWPIP-Coast directory)
+./install-deps.sh
+# or manually:
+sudo apt-get install python3-wxgtk4.0 mpv
+
+Monitor keep alive:
+sudo vi /etc/lightdm/lightdm.conf
+xserver-command=X -s 0 -dpms
+
+Autostart the program on boot:
+vi /home/pi/.config/lxsession/LXDE-pi/autostart
+@/home/pi/start_owpip.sh
+
+chmod +x /home/pi/start_owpip.sh
+
+cat /home/pi/start_owpip.sh
+#!/bin/bash
+cd /home/pi/Desktop/Oregon
+date >> /var/log/owpip.log
+/usr/bin/python owpip.py >> /var/log/owpip.log
+
+Logging:
+touch /var/log/oregon.log
+chmod 777 /var/log/oregon.log
+
+sudo vi /etc/logrotate.d/owpip
+/var/log/owpip.log {
+  rotate 12
+  monthly
+  compress
+  missingok
+  notifempty
+}
+
+System reboot everyday
+cat /etc/crontab
+0 3 * * * root reboot

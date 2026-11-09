@@ -1,0 +1,16 @@
+[project]
+name = "owpip-coast"
+version = "1.0.0"
+description = "Oregon Where Past Is Present — Coast touchscreen exhibit"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "wxPython>=4.2.0",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = []
