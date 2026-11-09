@@ -5,13 +5,61 @@ import platform
 import shutil
 import subprocess
 import sys
+from collections import namedtuple
 
 # external dependencies
 import wx
 
 VIDEO_PATH = os.path.join('images', 'Coquille.mp4')
-# Exhibit placement for omxplayer on the Pi touchscreen.
-OMXPLAYER_WIN = '1 95 1102 715'
+# Exhibit art and button coordinates are authored at this size.
+DESIGN_SIZE = (1600, 900)
+# Video rectangle in design pixels: x1, y1, x2, y2.
+VIDEO_RECT = (1, 95, 1102, 715)
+
+CanvasFit = namedtuple('CanvasFit', ['x', 'y', 'width', 'height', 'scale'])
+# Updated whenever the window size changes. Video playback reads it.
+canvas_fit = None
+
+
+def fit_canvas(design, client):
+    """Largest 16:9 (design-shaped) rect that fits inside the client, centered.
+
+    Returns a CanvasFit. The leftover area is a matte, not a stretched image.
+    A 1920x1080 screen matches the art exactly, so the matte is empty.
+    """
+    dw, dh = design
+    cw, ch = client
+    if cw <= 0 or ch <= 0 or dw <= 0 or dh <= 0:
+        return CanvasFit(0, 0, max(cw, 0), max(ch, 0), 1.0)
+    scale = min(cw / float(dw), ch / float(dh))
+    width = min(cw, int(round(dw * scale)))
+    height = min(ch, int(round(dh * scale)))
+    return CanvasFit((cw - width) // 2, (ch - height) // 2, width, height, scale)
+
+
+def map_design_point(pos, fit):
+    return (
+        int(round(pos[0] * fit.scale)) + fit.x,
+        int(round(pos[1] * fit.scale)) + fit.y,
+    )
+
+
+def video_bounds():
+    """Video window in screen pixels for the current canvas fit."""
+    fit = canvas_fit if canvas_fit is not None else fit_canvas(DESIGN_SIZE, DESIGN_SIZE)
+    x1, y1, x2, y2 = VIDEO_RECT
+    left, top = map_design_point((x1, y1), fit)
+    right, bottom = map_design_point((x2, y2), fit)
+    return left, top, right, bottom
+
+
+def scaled_bitmap(bitmap, width, height):
+    width = max(1, int(round(width)))
+    height = max(1, int(round(height)))
+    if bitmap.GetWidth() == width and bitmap.GetHeight() == height:
+        return bitmap
+    image = bitmap.ConvertToImage().Scale(width, height, wx.IMAGE_QUALITY_HIGH)
+    return wx.Bitmap(image)
 
 
 def parse_args(argv=None):
@@ -109,12 +157,15 @@ def start_video():
         print('video file missing:', video)
         return
 
+    left, top, right, bottom = video_bounds()
+    width = max(1, right - left)
+    height = max(1, bottom - top)
     omx = _which('omxplayer') or (
         '/usr/bin/omxplayer' if os.path.isfile('/usr/bin/omxplayer') else None
     )
     if omx:
         subprocess.Popen(
-            [omx, '--win', OMXPLAYER_WIN, '-o', 'local', video],
+            [omx, '--win', '%d %d %d %d' % (left, top, right, bottom), '-o', 'local', video],
         )
         print('playing video (omxplayer)')
         return
@@ -126,7 +177,7 @@ def start_video():
         return
 
     for player, args in (
-        ('mpv', ['--geometry=1102x620+1+95', video]),
+        ('mpv', ['--geometry=%dx%d+%d+%d' % (width, height, left, top), video]),
         ('ffplay', ['-window_title', 'OWPIP', '-autoexit', video]),
         ('xdg-open', [video]),
     ):
@@ -148,9 +199,12 @@ class LabelViewerPanel(wx.Panel):
         self.name = name
         self.Bind(wx.EVT_CHAR, self.on_keypress)
         self.cursor = wx.Cursor(wx.CURSOR_BLANK)
-        self.BackgroundColour = wx.BLACK
+        self.SetBackgroundColour(wx.BLACK)
         self.widgets = []
-        self.image = image
+        self.buttons = []
+        self.design_image = wx.Bitmap(image)
+        self.scaled_bg = self.design_image
+        self.fit = fit_canvas(DESIGN_SIZE, panel_size)
 
         # Uncomment the following line on wxpython 2.x
         # self.SetBackgroundStyle(wx.BG_STYLE_CUSTOM)
@@ -169,16 +223,34 @@ class LabelViewerPanel(wx.Panel):
             self.frame.close()
 
     def draw_image(self, event):
-        """ Draws the image to the panel's background. """
+        """ Draws the fitted exhibit image. Leftover area stays black. """
         dc = event.GetDC()
         if not dc:
             dc = wx.ClientDC(self)
             rect = self.GetUpdateRegion().GetBox()
             dc.SetClippingRegion(rect)
+        dc.SetBackground(wx.Brush(wx.BLACK))
         dc.Clear()
-        image = wx.Bitmap(self.image)
-        dc.DrawBitmap(image, 0, 0)
+        if self.scaled_bg and self.scaled_bg.IsOk():
+            dc.DrawBitmap(self.scaled_bg, self.fit.x, self.fit.y, True)
         self.SetFocus()
+
+    def apply_layout(self, fit):
+        """Scale the background and buttons from design pixels into fit."""
+        self.fit = fit
+        self.SetBackgroundColour(wx.BLACK)
+        self.scaled_bg = scaled_bitmap(self.design_image, fit.width, fit.height)
+        for button in self.buttons:
+            source = button['bitmap']
+            button['widget'].SetBitmap(
+                scaled_bitmap(
+                    source,
+                    source.GetWidth() * fit.scale,
+                    source.GetHeight() * fit.scale,
+                )
+            )
+            button['widget'].SetPosition(map_design_point(button['pos'], fit))
+        self.Refresh()
 
     def switch_panel(self, event):
         stop_video()
@@ -190,19 +262,19 @@ class LabelViewerPanel(wx.Panel):
         else:
             start_video()
 
-    def add_button(self, image_path, img_name, position):
+    def _add_bitmap_button(self, image_path, img_name, position, handler):
         image_path = './images/buttons/' + image_path
-        bmp = wx.Bitmap(image_path, wx.BITMAP_TYPE_PNG)
-        widget = wx.StaticBitmap(self, name=img_name, pos=position, bitmap=bmp)
-        widget.Bind(wx.EVT_LEFT_DOWN, self.switch_panel)
+        bitmap = wx.Bitmap(image_path, wx.BITMAP_TYPE_PNG)
+        widget = wx.StaticBitmap(self, name=img_name, pos=position, bitmap=bitmap)
+        widget.Bind(wx.EVT_LEFT_DOWN, handler)
         self.widgets.append(widget)
+        self.buttons.append({'widget': widget, 'bitmap': bitmap, 'pos': position})
+
+    def add_button(self, image_path, img_name, position):
+        self._add_bitmap_button(image_path, img_name, position, self.switch_panel)
 
     def play_button(self, image_path, img_name, position):
-        image_path = './images/buttons/' + image_path
-        bmp = wx.Bitmap(image_path, wx.BITMAP_TYPE_PNG)
-        widget = wx.StaticBitmap(self, name=img_name, pos=position, bitmap=bmp)
-        widget.Bind(wx.EVT_LEFT_DOWN, self.play_video)
-        self.widgets.append(widget)
+        self._add_bitmap_button(image_path, img_name, position, self.play_video)
 
 
 class MainPanel(LabelViewerPanel):
@@ -259,11 +331,14 @@ class MainFrame(wx.Frame):
             title='OWPIP Coast',
             size=image_size,
         )
+        self.design_size = image_size
         self.size = image_size
         self.fullscreen = fullscreen
+        self._fit_key = None
         self.panels = []
         self.panel_dict = {}
         self.current_panel = 'main'
+        self.SetBackgroundColour(wx.BLACK)
 
         main_panel = MainPanel(self, './images/pages/HomePage.png', 'main', image_size)
         self.panel_dict['main'] = main_panel
@@ -287,11 +362,62 @@ class MainFrame(wx.Frame):
         self.start_timeout_timer()
 
         # On macOS, ShowFullScreen alone does not show the window — call Show first.
+        # Bind size after the first placement so startup does not scale twice.
+        self.Freeze()
         self.Show()
-        if fullscreen:
+        self.place_on_screen()
+        self.fit_panels()
+        self.Bind(wx.EVT_SIZE, self.on_size)
+        self.Thaw()
+
+    def work_area(self):
+        index = wx.Display.GetFromWindow(self)
+        if index == wx.NOT_FOUND:
+            index = 0
+        return wx.Display(index).GetClientArea()
+
+    def place_on_screen(self):
+        """Make the frame cover the screen it opened on."""
+        if self.fullscreen:
             self.ShowFullScreen(True, style=wx.FULLSCREEN_ALL)
         else:
-            self.Centre()
+            self.SetRect(self.work_area())
+
+    def on_size(self, event):
+        self.fit_panels()
+        event.Skip()
+
+    def fit_panels(self):
+        """Scale every page so the 1600x900 art fits this window."""
+        global canvas_fit
+        if not self.panel_dict:
+            return
+        size = self.GetClientSize()
+        if size.width <= 0 or size.height <= 0:
+            return
+        key = (size.width, size.height)
+        if key == self._fit_key:
+            return
+        self._fit_key = key
+        fit = fit_canvas(self.design_size, key)
+        canvas_fit = fit
+        print(
+            'Fitting %dx%d exhibit into %dx%d window as %dx%d at (%d, %d)'
+            % (
+                self.design_size[0],
+                self.design_size[1],
+                key[0],
+                key[1],
+                fit.width,
+                fit.height,
+                fit.x,
+                fit.y,
+            )
+        )
+        for panel in self.panel_dict.values():
+            panel.SetPosition((0, 0))
+            panel.SetSize(size)
+            panel.apply_layout(fit)
 
     def add_panel(self, name, level, back_level='None'):
         bg = './images/pages/' + name + '.png'
@@ -329,6 +455,6 @@ if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)) or '.')
     fullscreen = parse_args(sys.argv[1:])
     app = wx.App(False)
-    # Exhibit art is authored at 1600x900; keep that canvas on all platforms.
-    MainFrame(None, (1600, 900), fullscreen=fullscreen)
+    # Art is authored at DESIGN_SIZE. MainFrame scales it to the screen.
+    MainFrame(None, DESIGN_SIZE, fullscreen=fullscreen)
     app.MainLoop()
