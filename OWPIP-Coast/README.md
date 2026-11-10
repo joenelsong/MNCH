@@ -67,4 +67,4 @@ Or use the startup script on the Pi:
 
 ## Pi kiosk notes
 
-See [`help`](help) for autostart, logging, and display settings.
+On a new Pi, follow [`initial-setup.md`](initial-setup.md): install, screen blanking, automatic login, and starting the exhibit at boot.

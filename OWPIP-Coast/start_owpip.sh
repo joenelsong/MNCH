@@ -1,11 +1,9 @@
-#! /bin/bash
-
-# Launches the Label-Viewer Python program on startup
-# Usage: place in /home/pi and chmod 744
-# in /home/pi/.config/lxsession/LDXE-pi/autostart add:
-# @/home/pi/viewer_startup.sh
-
-echo "###############" >> /var/log/owpip.log
-date >> /var/log/owpip.log
-cd /home/pi/Desktop/OWPIP-Coast
-python owpip-coast.py >> /var/log/owpip.log
+#!/bin/bash
+cd "$(dirname "$0")" || exit 1
+LOG=/var/log/owpip.log
+if ! touch "$LOG" 2>/dev/null; then
+    LOG="$HOME/owpip.log"
+fi
+echo "###############" >> "$LOG"
+date >> "$LOG"
+exec python3 owpip-coast.py >> "$LOG" 2>&1
