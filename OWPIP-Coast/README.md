@@ -67,4 +67,4 @@ Or use the startup script on the Pi:
 
 ## Pi kiosk notes
 
-On a new Pi, follow [`initial-setup.md`](initial-setup.md): install, screen blanking, automatic login, and starting the exhibit at boot.
+On a new Pi, run `./install-deps.sh`, then `./setup-kiosk.sh` for screen blanking and autostart. The steps are in [`initial-setup.md`](initial-setup.md).
