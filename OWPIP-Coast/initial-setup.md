@@ -22,19 +22,14 @@ sudo reboot
 
 Do not run `setup-kiosk.sh` with `sudo`. It asks for your password when it needs root.
 
-That script turns screen blanking off, turns on desktop autologin for `mnch`, and puts this line in `~/.config/labwc/autostart`:
-
-```bash
-/home/mnch/Desktop/OWPIP-Coast/start_owpip.sh &
-```
+On Raspberry Pi OS 11 (Bullseye) the script adds the exhibit to `~/.config/lxsession/LXDE-pi/autostart` and sets `xserver-command=X -s 0 -dpms` so the monitor stays on. Newer Pi OS uses `~/.config/autostart/owpip-coast.desktop` instead. It also turns on desktop autologin for `mnch`.
 
 After reboot the exhibit should open on its own. Escape quits it.
 
-If it does not open, read both logs. An empty `/var/log/owpip.log` means startup wrote to the home file instead:
+In `/var/log/owpip.log`, a line that says `log ready` is from the installer. A row of `#` characters means `start_owpip.sh` ran. If the exhibit does not open, read the log:
 
 ```bash
 cat /var/log/owpip.log
-cat /home/mnch/owpip.log
 ```
 
 To try it once without rebooting:
