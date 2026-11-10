@@ -21,6 +21,28 @@ install_pip_packages() {
     python3 -m pip install .
 }
 
+setup_log() {
+    local log_user="${SUDO_USER:-$(id -un)}"
+    if [[ "${log_user}" == "root" ]]; then
+        log_user="$(id -un)"
+    fi
+    echo "Setting up /var/log/owpip.log for ${log_user}..."
+    sudo touch /var/log/owpip.log
+    sudo chown "${log_user}:${log_user}" /var/log/owpip.log
+    sudo chmod 644 /var/log/owpip.log
+    echo "##### log ready $(date) user=${log_user}" >> /var/log/owpip.log
+    sudo tee /etc/logrotate.d/owpip >/dev/null <<EOF
+/var/log/owpip.log {
+  rotate 12
+  monthly
+  compress
+  missingok
+  notifempty
+  create 644 ${log_user} ${log_user}
+}
+EOF
+}
+
 if [[ "$(uname -s)" == "Linux" ]] && command -v apt-get >/dev/null; then
     if apt-cache show python3-wxgtk4.0 >/dev/null 2>&1; then
         install_pi_packages
@@ -28,6 +50,7 @@ if [[ "$(uname -s)" == "Linux" ]] && command -v apt-get >/dev/null; then
         echo "python3-wxgtk4.0 not in apt; falling back to pip."
         install_pip_packages
     fi
+    setup_log
 else
     install_pip_packages
 fi

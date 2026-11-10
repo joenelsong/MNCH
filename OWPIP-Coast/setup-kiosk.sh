@@ -28,10 +28,6 @@ echo "Home: ${HOME}"
 echo "App:  ${START}"
 echo
 
-echo "Creating the log file..."
-sudo touch /var/log/owpip.log
-sudo chmod 666 /var/log/owpip.log
-
 echo "Writing ${AUTOSTART}..."
 mkdir -p "${HOME}/.config/labwc"
 touch "${AUTOSTART}"

@@ -2,13 +2,15 @@
 
 On the Pi, as the `mnch` user, from the project directory.
 
-Install dependencies:
+Install dependencies. This also creates `/var/log/owpip.log`, owned by `mnch`, and the log rotation rule:
 
 ```bash
 cd /home/mnch/Desktop/OWPIP-Coast
 chmod +x install-deps.sh
 ./install-deps.sh
 ```
+
+A line that starts with `##### log ready` means the log file is writable. The exhibit appends to that same file when it starts.
 
 Turn screen blanking off and start the exhibit at login:
 
@@ -28,10 +30,11 @@ That script turns screen blanking off, turns on desktop autologin for `mnch`, an
 
 After reboot the exhibit should open on its own. Escape quits it.
 
-If it does not open, read the log:
+If it does not open, read both logs. An empty `/var/log/owpip.log` means startup wrote to the home file instead:
 
 ```bash
 cat /var/log/owpip.log
+cat /home/mnch/owpip.log
 ```
 
 To try it once without rebooting:
